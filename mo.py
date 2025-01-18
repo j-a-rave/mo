@@ -9,10 +9,6 @@ import face_recognition
 from mo import const
 from mo import util
 
-tracking_emotions = True
-tracking_head = True
-display_window = True
-
 
 class MoTransform:
     def __init__(self, pos=None, rot=None):
@@ -40,7 +36,7 @@ class MoTransform:
 
 
 class MoCaptureManager:
-    def __init__(self):
+    def __init__(self, show_camera=True, track_head=True, track_emotions=True):
         # threads
         self.thread_main = None
         self.thread_camera = None
@@ -61,12 +57,16 @@ class MoCaptureManager:
         self.trans_spring = None
         self.emotion = "neutral"
 
+        # settings
+        self.show_camera = show_camera
+        self.track_head = track_head
+        self.track_emotions = track_emotions
         self.quit = False
 
     def is_capturing(self):
         return self.frame is not None and len(self.frame) > 0
 
-    def is_tracking_head(self):
+    def head_tracking_data_exists(self):
         return self.trans_zero is not None
 
     def calibrate(self):
@@ -110,13 +110,22 @@ class MoCaptureManager:
         cl = clahe.apply(l_channel)
         l_img = cv.merge((cl, a, b))
         self.frame = cv.cvtColor(l_img, cv.COLOR_LAB2BGR)
-        if self.is_tracking_head():
+        if self.head_tracking_data_exists():
             self.ease()
         return True
 
     def display(self):
-        if not display_window:
+        if not self.show_camera:
+            cv.destroyAllWindows()
             return
+
+        def draw_text_lines(frame, lines, color):
+            for x in range(len(lines)):
+                cv.putText(frame, lines[x], (0, 36 * (x + 1)), cv.FONT_HERSHEY_SIMPLEX, 1, color)
+
+        draw_text_lines(self.frame,
+                        [f"{key}: {value}" for key, value in self.get_data().items()],
+                        const.COLOR_SPRING_CONTROLS)
         cv.imshow("MO", self.frame)
 
     def read_head(self):
@@ -142,7 +151,7 @@ class MoCaptureManager:
                                            face_turn[1] / const.FACE_TURN_MAX,
                                            face_turn[0] / const.FACE_TURN_MAX])
 
-            if not self.is_tracking_head():
+            if not self.head_tracking_data_exists():
                 # this is the first head track call
                 self.calibrate()
 
@@ -164,12 +173,14 @@ class MoCaptureManager:
 
     def update_head(self):
         while not self.quit:
-            if tracking_head:
+            if self.track_head:
                 self.read_head()
+            else:
+                sleep(const.SLEEP_CAPTURE)
 
     def update_emotions(self):
         while not self.quit:
-            if tracking_emotions:
+            if self.track_emotions:
                 self.read_emotions()
                 sleep(const.SLEEP_EMOTIONS)
 
@@ -199,9 +210,22 @@ class MoCaptureManager:
         self.thread_main.join()
 
     def get_data(self):
-        if not self.is_tracking_head():
+        if not self.head_tracking_data_exists():
             return {"message": "Initializing", }
         pos_diff = util.vector_a_b(self.trans_zero.pos, self.trans_spring.pos)
-        return {"pos": f"{pos_diff[0]:.2f}, {pos_diff[1]:.2f}, {pos_diff[2]:.2f}",
+        return {"pos": f"{self.trans_spring.pos[0]:.2f}, {self.trans_spring.pos[1]:.2f}, {self.trans_spring.pos[2]:.2f}",
+                "zero": f"{self.trans_zero.pos[0]:.2f}, {self.trans_zero.pos[1]:.2f}, {self.trans_zero.pos[2]:.2f}",
+                "delta": f"{pos_diff[0]:.2f}, {pos_diff[1]:.2f}, {pos_diff[2]:.2f}",
                 "rot": f"{self.trans_spring.rot[0]:.2f}, {self.trans_spring.rot[1]:.2f}, {self.trans_spring.rot[2]:.2f}",
                 "vibe": const.EMOTION_VIBE_MAP[self.emotion], }
+
+    def set_show_camera(self, enabled):
+        self.show_camera = enabled
+
+    def set_track_head(self, enabled):
+        self.track_head = enabled
+
+    def set_track_emotions(self, enabled):
+        self.track_emotions = enabled
+        if not enabled:
+            self.emotion = "neutral"
