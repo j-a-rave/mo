@@ -1,5 +1,4 @@
 import bpy
-from bpy.types import Menu
 from bpy.props import *
 
 from mo import mo
@@ -58,31 +57,6 @@ class OMoCalibrate(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def update_show_camera(prop, context):
-    print("huh")
-    capture.set_show_camera(prop.get('show_camera'))
-
-
-def update_track_head(prop, context):
-    capture.set_track_head(prop.get('track_head'))
-
-
-def update_track_emotions(prop, context):
-    capture.set_track_emotions(prop.get('track_emotions'))
-
-
-class PGMoSettings(bpy.types.PropertyGroup):
-    show_camera: bpy.props.BoolProperty(name="Show Camera",
-                                        default=True,
-                                        update=update_show_camera)
-    track_head: bpy.props.BoolProperty(name="Track Head",
-                                       default=True,
-                                       update=update_track_head)
-    track_emotions: bpy.props.BoolProperty(name="Track Emotions",
-                                           default=True,
-                                           update=update_track_emotions)
-
-
 class PMoMainPanel(bpy.types.Panel):
     bl_label = "MO"
     bl_idname = "MO_PT_MainPanel"
@@ -92,13 +66,26 @@ class PMoMainPanel(bpy.types.Panel):
     bl_context = "objectmode"
 
     def draw(self, context):
-        obj = context.active_object
         mo_settings = context.scene.mo_settings
 
         layout = self.layout
         col = layout.column()
+
         row = col.row(align=True)
-        row.label(text="MO Test")
+        row.prop(mo_settings, 'control_object', text="Control Object")
+
+        grid = col.grid_flow(columns=4, align=True)
+        grid.prop(mo_settings, 'show_camera', icon='VIEW_CAMERA', text='')
+        grid.prop(mo_settings, 'track_head', icon='OBJECT_ORIGIN', text='')
+        grid.prop(mo_settings, 'track_emotions', icon='MESH_MONKEY', text='')
+        grid.prop(mo_settings, 'absolute_position', icon='TRANSFORM_ORIGINS', text='')
+
+        row = col.row(align=True)
+        row.prop(mo_settings, 'pos_scale', text="Position Scale")
+
+        row = col.row(align=True)
+        row.prop(mo_settings, 'rot_scale', text="Rotation Scale")
+
         row = col.row(align=True)
         if capture is None:
             row.operator('mo.start_capture', text="Start Capture")
@@ -108,17 +95,13 @@ class PMoMainPanel(bpy.types.Panel):
         row = col.row(align=True)
         row.operator('mo.calibrate', text="Calibrate")
 
-        grid = col.grid_flow(columns=3, align=True)
-        grid.prop(mo_settings, 'show_camera', icon='VIEW_CAMERA', text='')
-        grid.prop(mo_settings, 'track_head', icon='OBJECT_ORIGIN', text='')
-        grid.prop(mo_settings, 'track_emotions', icon='FUND', text='')
-
 
 blender_classes = [
     OMoStartCapture,
     OMoStopCapture,
     OMoCalibrate,
-    PGMoSettings,
+    mo.PGMoSettings,
+    mo.PGMoData,
     PMoMainPanel,
 ]
 
@@ -134,7 +117,8 @@ def register():
     for c in blender_classes:
         bpy.utils.register_class(c)
 
-    bpy.types.Scene.mo_settings = PointerProperty(type=PGMoSettings)
+    bpy.types.Scene.mo_settings = PointerProperty(type=mo.PGMoSettings)
+    bpy.types.Object.mo_data = PointerProperty(type=mo.PGMoData)
 
 
 def unregister():

@@ -1,13 +1,38 @@
 from threading import Thread
 from time import sleep
-import os
 
 from deepface import DeepFace
 import cv2 as cv
 import face_recognition
 
+import bpy
+from bpy.props import *
+import mathutils
+
 from mo import const
 from mo import util
+
+
+class PGMoData(bpy.types.PropertyGroup):
+    vibe: bpy.props.StringProperty(name="Vibe",
+                                   default=const.VIBE_MID)
+
+
+class PGMoSettings(bpy.types.PropertyGroup):
+    show_camera: bpy.props.BoolProperty(name="Show Camera",
+                                        default=True)
+    track_head: bpy.props.BoolProperty(name="Track Head",
+                                       default=True)
+    track_emotions: bpy.props.BoolProperty(name="Track Emotions",
+                                           default=True)
+    absolute_position: bpy.props.BoolProperty(name="Absolute Position",
+                                              default=False)
+    control_object: bpy.props.PointerProperty(name="Control Object",
+                                              type=bpy.types.Object)
+    pos_scale: bpy.props.FloatVectorProperty(name="Position Scale",
+                                             default=(1.0, 1.0, 1.0))
+    rot_scale: bpy.props.FloatVectorProperty(name="Rotation Scale",
+                                             default=(1.0, 1.0, 1.0))
 
 
 class MoTransform:
@@ -36,7 +61,7 @@ class MoTransform:
 
 
 class MoCaptureManager:
-    def __init__(self, show_camera=True, track_head=True, track_emotions=True):
+    def __init__(self):
         # threads
         self.thread_main = None
         self.thread_camera = None
@@ -58,9 +83,6 @@ class MoCaptureManager:
         self.emotion = "neutral"
 
         # settings
-        self.show_camera = show_camera
-        self.track_head = track_head
-        self.track_emotions = track_emotions
         self.quit = False
 
     def is_capturing(self):
@@ -112,10 +134,11 @@ class MoCaptureManager:
         self.frame = cv.cvtColor(l_img, cv.COLOR_LAB2BGR)
         if self.head_tracking_data_exists():
             self.ease()
+            self.update_scene()
         return True
 
     def display(self):
-        if not self.show_camera:
+        if not bpy.context.scene.mo_settings.show_camera:
             cv.destroyAllWindows()
             return
 
@@ -142,14 +165,18 @@ class MoCaptureManager:
             nose_bridge_pos = face['nose_bridge'][0]
             face_turn = util.vector_a_b(face_center_pos, nose_bridge_pos)
             size = util.capture_size(side_a, side_b, self.frame_width)
-            roll = ((side_a[1] / self.frame_height) - (side_b[1] / self.frame_height)) / size
+            roll = ((side_b[1] / self.frame_height) - (side_a[1] / self.frame_height)) / size
 
-            self.trans_track = MoTransform(pos=[util.capture_pos(face_center_pos[0], self.frame_width),
-                                           util.capture_pos(face_center_pos[1], self.frame_height),
-                                           util.capture_distance_pos(side_a, side_b, self.frame_height)],
-                                           rot=[roll,
-                                           face_turn[1] / const.FACE_TURN_MAX,
-                                           face_turn[0] / const.FACE_TURN_MAX])
+            pos_scale = bpy.context.scene.mo_settings.pos_scale
+            rot_scale = bpy.context.scene.mo_settings.rot_scale
+
+            # -Y forward.
+            self.trans_track = MoTransform(pos=[util.capture_pos(face_center_pos[0], self.frame_width) * pos_scale[0],
+                                           -1.0 * util.capture_distance_pos(side_a, side_b, self.frame_height) * pos_scale[1],
+                                           -1.0 * util.capture_pos(face_center_pos[1], self.frame_height) * pos_scale[2]],
+                                           rot=[face_turn[1] / const.FACE_TURN_MAX * rot_scale[0],
+                                                roll * rot_scale[1],
+                                                face_turn[0] / const.FACE_TURN_MAX * rot_scale[2]])
 
             if not self.head_tracking_data_exists():
                 # this is the first head track call
@@ -173,16 +200,16 @@ class MoCaptureManager:
 
     def update_head(self):
         while not self.quit:
-            if self.track_head:
+            if bpy.context.scene.mo_settings.track_head:
                 self.read_head()
             else:
                 sleep(const.SLEEP_CAPTURE)
 
     def update_emotions(self):
         while not self.quit:
-            if self.track_emotions:
+            if bpy.context.scene.mo_settings.track_emotions:
                 self.read_emotions()
-                sleep(const.SLEEP_EMOTIONS)
+            sleep(const.SLEEP_EMOTIONS)
 
     def update_main(self):
         self.thread_camera = Thread(target=self.update_camera)
@@ -200,6 +227,16 @@ class MoCaptureManager:
         self.cap.release()
         cv.destroyAllWindows()
 
+    def update_scene(self):
+        ctrl_obj = bpy.context.scene.mo_settings.control_object
+        if ctrl_obj is None:
+            return
+        pos = mathutils.Vector(self.trans_spring.pos if bpy.context.scene.mo_settings.absolute_position
+                               else util.vector_a_b(self.trans_zero.pos, self.trans_spring.pos))
+        ctrl_obj.delta_location = pos
+        ctrl_obj.delta_rotation_euler = self.trans_spring.rot
+        ctrl_obj.mo_data.vibe = const.EMOTION_VIBE_MAP[self.emotion]
+
     def start(self):
         self.quit = False
         self.thread_main = Thread(target=self.update_main)
@@ -211,21 +248,10 @@ class MoCaptureManager:
 
     def get_data(self):
         if not self.head_tracking_data_exists():
-            return {"message": "Initializing", }
+            return {}
         pos_diff = util.vector_a_b(self.trans_zero.pos, self.trans_spring.pos)
         return {"pos": f"{self.trans_spring.pos[0]:.2f}, {self.trans_spring.pos[1]:.2f}, {self.trans_spring.pos[2]:.2f}",
                 "zero": f"{self.trans_zero.pos[0]:.2f}, {self.trans_zero.pos[1]:.2f}, {self.trans_zero.pos[2]:.2f}",
                 "delta": f"{pos_diff[0]:.2f}, {pos_diff[1]:.2f}, {pos_diff[2]:.2f}",
                 "rot": f"{self.trans_spring.rot[0]:.2f}, {self.trans_spring.rot[1]:.2f}, {self.trans_spring.rot[2]:.2f}",
                 "vibe": const.EMOTION_VIBE_MAP[self.emotion], }
-
-    def set_show_camera(self, enabled):
-        self.show_camera = enabled
-
-    def set_track_head(self, enabled):
-        self.track_head = enabled
-
-    def set_track_emotions(self, enabled):
-        self.track_emotions = enabled
-        if not enabled:
-            self.emotion = "neutral"
