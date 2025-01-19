@@ -9,6 +9,9 @@ EMOTION_VIBE_MAP = {"angry": VIBE_MID,
                     "neutral": VIBE_MID,
                     "sad": VIBE_DOWN,
                     "surprise": VIBE_UP}
+VIBE_FACTOR_MAP = {VIBE_UP: 1,
+                   VIBE_MID: 0,
+                   VIBE_DOWN: -1}
 
 CAPTURE_PATH = r"C:\Users\User\.deepface\captures"
 CAPTURE_FILE = CAPTURE_PATH + "cap.png"

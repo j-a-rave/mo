@@ -14,8 +14,9 @@ from mo import util
 
 
 class PGMoData(bpy.types.PropertyGroup):
-    vibe: bpy.props.StringProperty(name="Vibe",
-                                   default=const.VIBE_MID)
+    vibe: bpy.props.IntProperty(name="Vibe",
+                                min=-1,
+                                max=1)
 
 
 class PGMoSettings(bpy.types.PropertyGroup):
@@ -235,7 +236,7 @@ class MoCaptureManager:
                                else util.vector_a_b(self.trans_zero.pos, self.trans_spring.pos))
         ctrl_obj.delta_location = pos
         ctrl_obj.delta_rotation_euler = self.trans_spring.rot
-        ctrl_obj.mo_data.vibe = const.EMOTION_VIBE_MAP[self.emotion]
+        ctrl_obj.mo_data.vibe = const.VIBE_FACTOR_MAP[const.EMOTION_VIBE_MAP[self.emotion]]
 
     def start(self):
         self.quit = False
