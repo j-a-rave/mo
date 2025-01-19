@@ -10,6 +10,10 @@ def stop_capture():
     global capture
     if capture is not None:
         capture.stop()
+        ctrl_obj = bpy.context.scene.mo_settings.control_object
+        if ctrl_obj is not None:
+            ctrl_obj.delta_location = (0, 0, 0)
+            ctrl_obj.delta_rotation_euler = (0, 0, 0)
         capture = None
 
 
